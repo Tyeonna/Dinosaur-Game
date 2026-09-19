@@ -11,16 +11,13 @@ module tt_um_vga_glyph_mode(
     input  wire       rst_n
 );
 
-    // ============================================================
+    // ------------------------------------------------------------
     // VGA
-    // ============================================================
+    // ------------------------------------------------------------
 
-    wire hsync;
-    wire vsync;
-    wire display_on;
-
+    wire hsync, vsync, display_on;
     wire [10:0] hpos;
-    wire [9:0]  vpos;
+    wire [9:0] vpos;
 
     wire [5:0] RGB;
 
@@ -35,8 +32,8 @@ module tt_um_vga_glyph_mode(
         RGB[5]
     };
 
-    assign uio_out = 8'b0;
-    assign uio_oe  = 8'b0;
+    assign uio_out = 0;
+    assign uio_oe  = 0;
 
     hvsync_generator hvsync_gen(
         .clk(clk),
@@ -49,61 +46,32 @@ module tt_um_vga_glyph_mode(
         .vpos(vpos)
     );
 
-    // ============================================================
+    // ------------------------------------------------------------
     // CONTROLS
     //
     // ui_in[0] = JUMP
     // ui_in[1] = RESET
-    // ============================================================
+    // ------------------------------------------------------------
 
     wire jump_button  = ui_in[0];
     wire reset_button = ui_in[1];
 
-    // Button handling
-    reg jump_armed;
-    reg jump_request;
-
-    always @(posedge clk) begin
-
-        if (!rst_n) begin
-            jump_armed   <= 1'b1;
-            jump_request <= 1'b0;
-        end
-
-        else if (!jump_button) begin
-
-            // Button released.
-            // Arm it for the next press.
-            jump_armed <= 1'b1;
-
-        end
-
-        else if (jump_button && jump_armed) begin
-
-            // New button press.
-            jump_request <= 1'b1;
-            jump_armed   <= 1'b0;
-
-        end
-
-    end
-
-    // ============================================================
+    // ------------------------------------------------------------
     // GAME CONSTANTS
-    // ============================================================
+    // ------------------------------------------------------------
 
-    localparam [9:0] GROUND = 10'd400;
+    localparam GROUND = 10'd400;
 
-    localparam [9:0] DINO_X = 10'd80;
-    localparam [9:0] DINO_W = 10'd28;
-    localparam [9:0] DINO_H = 10'd36;
+    localparam DINO_X = 10'd80;
+    localparam DINO_W = 10'd28;
+    localparam DINO_H = 10'd36;
 
-    localparam [9:0] CACTUS_W = 10'd20;
-    localparam [9:0] CACTUS_H = 10'd40;
+    localparam CACTUS_W = 10'd20;
+    localparam CACTUS_H = 10'd40;
 
-    // ============================================================
+    // ------------------------------------------------------------
     // GAME VARIABLES
-    // ============================================================
+    // ------------------------------------------------------------
 
     reg [9:0] dino_y;
     reg [9:0] cactus_x;
@@ -112,27 +80,24 @@ module tt_um_vga_glyph_mode(
 
     reg game_over;
 
-    // ============================================================
-    // SCORE
-    // ============================================================
-
+    // Score in BCD
     reg [3:0] score_hundreds;
     reg [3:0] score_tens;
     reg [3:0] score_ones;
 
     reg [2:0] score_timer;
 
-    // ============================================================
+    // ------------------------------------------------------------
     // FRAME TICK
-    // ============================================================
+    // ------------------------------------------------------------
 
     wire frame_tick =
         (hpos == 11'd0) &&
         (vpos == 10'd0);
 
-    // ============================================================
+    // ------------------------------------------------------------
     // GAME LOGIC
-    // ============================================================
+    // ------------------------------------------------------------
 
     always @(posedge clk) begin
 
@@ -141,15 +106,15 @@ module tt_um_vga_glyph_mode(
             dino_y <= GROUND - DINO_H;
             cactus_x <= 10'd600;
 
-            jump_timer <= 6'd0;
+            jump_timer <= 0;
 
-            game_over <= 1'b0;
+            game_over <= 0;
 
-            score_hundreds <= 4'd0;
-            score_tens <= 4'd0;
-            score_ones <= 4'd0;
+            score_hundreds <= 0;
+            score_tens <= 0;
+            score_ones <= 0;
 
-            score_timer <= 3'd0;
+            score_timer <= 0;
 
         end
 
@@ -162,36 +127,33 @@ module tt_um_vga_glyph_mode(
             dino_y <= GROUND - DINO_H;
             cactus_x <= 10'd600;
 
-            jump_timer <= 6'd0;
+            jump_timer <= 0;
 
-            game_over <= 1'b0;
+            game_over <= 0;
 
-            score_hundreds <= 4'd0;
-            score_tens <= 4'd0;
-            score_ones <= 4'd0;
+            score_hundreds <= 0;
+            score_tens <= 0;
+            score_ones <= 0;
 
-            score_timer <= 3'd0;
-
-            jump_request <= 1'b0;
+            score_timer <= 0;
 
         end
 
         // --------------------------------------------------------
-        // GAME
+        // GAME UPDATE
         // --------------------------------------------------------
 
         else if (frame_tick && !game_over) begin
 
             // ----------------------------------------------------
-            // START JUMP
+            // JUMP
             // ----------------------------------------------------
 
-            if (jump_request &&
-                jump_timer == 6'd0 &&
+            if (jump_button &&
+                jump_timer == 0 &&
                 dino_y == GROUND - DINO_H) begin
 
-                jump_timer <= 6'd1;
-                jump_request <= 1'b0;
+                jump_timer <= 1;
 
             end
 
@@ -199,74 +161,70 @@ module tt_um_vga_glyph_mode(
             // JUMP MOVEMENT
             // ----------------------------------------------------
 
-            if (jump_timer > 6'd0) begin
+            if (jump_timer > 0) begin
 
-                jump_timer <= jump_timer + 6'd1;
+                jump_timer <= jump_timer + 1;
 
-                // UP
-                if (jump_timer < 6'd10) begin
+                // Going UP
+                if (jump_timer < 10) begin
 
-                    dino_y <= dino_y - 10'd10;
-
-                end
-
-                // DOWN
-                else if (jump_timer < 6'd20) begin
-
-                    dino_y <= dino_y + 10'd10;
+                    dino_y <= dino_y - 10;
 
                 end
 
-                // LAND
+                // Going DOWN
+                else if (jump_timer < 20) begin
+
+                    dino_y <= dino_y + 10;
+
+                end
+
+                // Back to ground
                 else begin
 
                     dino_y <= GROUND - DINO_H;
-                    jump_timer <= 6'd0;
+                    jump_timer <= 0;
 
                 end
 
             end
 
             // ----------------------------------------------------
-            // CACTUS MOVEMENT
+            // MOVE CACTUS
             // ----------------------------------------------------
 
-            if (cactus_x > 10'd5) begin
+            if (cactus_x > 10)
 
-                cactus_x <= cactus_x - 10'd5;
+                cactus_x <= cactus_x - 5;
 
-            end
+            else
 
-            else begin
-
-                cactus_x <= 10'd640;
-
-            end
+                cactus_x <= 640;
 
             // ----------------------------------------------------
             // SCORE
             // ----------------------------------------------------
 
-            if (score_timer == 3'd5) begin
+            if (score_timer == 5) begin
 
-                score_timer <= 3'd0;
+                score_timer <= 0;
 
-                if (score_ones == 4'd9) begin
+                if (score_ones == 9) begin
 
-                    score_ones <= 4'd0;
+                    score_ones <= 0;
 
-                    if (score_tens == 4'd9) begin
+                    if (score_tens == 9) begin
 
-                        score_tens <= 4'd0;
+                        score_tens <= 0;
 
-                        if (score_hundreds < 4'd9)
-                            score_hundreds <= score_hundreds + 4'd1;
+                        if (score_hundreds < 9)
+                            score_hundreds <= score_hundreds + 1;
 
                     end
 
                     else begin
 
-                        score_tens <= score_tens + 4'd1;
+                        score_tens <= score_tens + 1;
 
                     end
 
@@ -274,7 +232,7 @@ module tt_um_vga_glyph_mode(
 
                 else begin
 
-                    score_ones <= score_ones + 4'd1;
+                    score_ones <= score_ones + 1;
 
                 end
 
@@ -282,7 +240,7 @@ module tt_um_vga_glyph_mode(
 
             else begin
 
-                score_timer <= score_timer + 3'd1;
+                score_timer <= score_timer + 1;
 
             end
 
@@ -291,9 +249,9 @@ module tt_um_vga_glyph_mode(
             // ----------------------------------------------------
 
             if (
-                ((DINO_X + DINO_W) > cactus_x) &&
-                (DINO_X < (cactus_x + CACTUS_W)) &&
-                ((dino_y + DINO_H) > (GROUND - CACTUS_H))
+                (DINO_X + DINO_W > cactus_x) &&
+                (DINO_X < cactus_x + CACTUS_W) &&
+                (dino_y + DINO_H > GROUND - CACTUS_H)
             ) begin
 
                 game_over <= 1'b1;
@@ -304,317 +262,296 @@ module tt_um_vga_glyph_mode(
 
     end
 
-    // ============================================================
+    // ------------------------------------------------------------
     // GROUND
-    // ============================================================
+    // ------------------------------------------------------------
 
     wire ground_pixel =
         (vpos >= GROUND) &&
-        (vpos < (GROUND + 10'd4));
+        (vpos < GROUND + 4);
 
-    // ============================================================
+    // ------------------------------------------------------------
     // DINO
-    // ============================================================
+    // ------------------------------------------------------------
 
     wire dino_body =
-        (hpos >= {1'b0, DINO_X}) &&
-        (hpos < {1'b0, DINO_X + DINO_W}) &&
+        (hpos >= DINO_X) &&
+        (hpos < DINO_X + DINO_W) &&
         (vpos >= dino_y) &&
-        (vpos < (dino_y + DINO_H));
+        (vpos < dino_y + DINO_H);
 
     wire dino_cut =
-        (hpos < {1'b0, DINO_X + 10'd7}) &&
-        (vpos < (dino_y + 10'd7));
+        (hpos < DINO_X + 7) &&
+        (vpos < dino_y + 7);
 
     wire dino_pixel =
         dino_body && !dino_cut;
 
     wire dino_eye =
-        (hpos >= {1'b0, DINO_X + 10'd19}) &&
-        (hpos < {1'b0, DINO_X + 10'd23}) &&
-        (vpos >= (dino_y + 10'd7)) &&
-        (vpos < (dino_y + 10'd11));
+        (hpos >= DINO_X + 19) &&
+        (hpos < DINO_X + 23) &&
+        (vpos >= dino_y + 7) &&
+        (vpos < dino_y + 11);
 
-    // ============================================================
+    // ------------------------------------------------------------
     // CACTUS
-    // ============================================================
+    // ------------------------------------------------------------
 
     wire cactus_trunk =
-        (hpos >= {1'b0, cactus_x}) &&
-        (hpos < {1'b0, cactus_x + 10'd10}) &&
-        (vpos >= (GROUND - CACTUS_H)) &&
+        (hpos >= cactus_x) &&
+        (hpos < cactus_x + 10) &&
+        (vpos >= GROUND - CACTUS_H) &&
         (vpos < GROUND);
 
     wire cactus_left =
-        (hpos >= {1'b0, cactus_x - 10'd8}) &&
-        (hpos < {1'b0, cactus_x}) &&
-        (vpos >= (GROUND - 10'd25)) &&
-        (vpos < (GROUND - 10'd10));
+        (hpos >= cactus_x - 8) &&
+        (hpos < cactus_x) &&
+        (vpos >= GROUND - 25) &&
+        (vpos < GROUND - 10);
 
     wire cactus_right =
-        (hpos >= {1'b0, cactus_x + 10'd10}) &&
-        (hpos < {1'b0, cactus_x + 10'd18}) &&
-        (vpos >= (GROUND - 10'd30)) &&
-        (vpos < (GROUND - 10'd15));
+        (hpos >= cactus_x + 10) &&
+        (hpos < cactus_x + 18) &&
+        (vpos >= GROUND - 30) &&
+        (vpos < GROUND - 15);
 
     wire cactus_pixel =
         cactus_trunk |
         cactus_left |
         cactus_right;
 
-    // ============================================================
-    // SIMPLE 5x7 DIGIT FONT
+    // ------------------------------------------------------------
+    // SCORE DISPLAY
     //
-    // Used only for the score.
-    // ============================================================
+    // SCORE 000
+    // ------------------------------------------------------------
 
-    reg [4:0] digit_bits;
-    reg [3:0] digit_value;
+    reg [5:0] score_glyph;
 
-    reg [2:0] digit_x;
-    reg [2:0] digit_y;
+    // FIXED WIDTHS:
+    // hpos is 11 bits, so score_x is 11 bits.
+    // vpos is 10 bits, so score_y is 10 bits.
+    reg [10:0] score_x;
+    reg [9:0] score_y;
 
-    reg digit_pixel;
+    wire score_area =
+        (hpos >= 450) &&
+        (hpos < 540) &&
+        (vpos >= 15) &&
+        (vpos < 28);
 
     always @(*) begin
 
-        digit_value = 4'd0;
-        digit_x = 3'd0;
-        digit_y = 3'd0;
-        digit_bits = 5'b00000;
-        digit_pixel = 1'b0;
+        score_glyph = 6'd26;
+        score_x = 11'd0;
+        score_y = 10'd0;
 
-        // SCORE AREA
-        //
-        // Three digits at:
-        // x = 560, 570, 580
-        // y = 20 to 34
+        if (score_area) begin
 
-        if ((hpos >= 11'd555) &&
-            (hpos < 11'd590) &&
-            (vpos >= 10'd20) &&
-            (vpos < 10'd35)) begin
+            // Y POSITION
+            score_y = vpos - 10'd15;
 
-            // Select digit
+            // ----------------------------------------------------
+            // S
+            // ----------------------------------------------------
 
-            if (hpos < 11'd566) begin
+            if (hpos >= 450 && hpos < 460) begin
 
-                digit_value = score_hundreds;
-                digit_x = hpos - 11'd555;
+                score_glyph = 6'd18;
+                score_x = hpos - 11'd450;
 
             end
 
-            else if (hpos < 11'd577) begin
+            // ----------------------------------------------------
+            // C
+            // ----------------------------------------------------
 
-                digit_value = score_tens;
-                digit_x = hpos - 11'd566;
+            else if (hpos >= 460 && hpos < 470) begin
 
-            end
-
-            else begin
-
-                digit_value = score_ones;
-                digit_x = hpos - 11'd577;
+                score_glyph = 6'd2;
+                score_x = hpos - 11'd460;
 
             end
 
-            digit_y = vpos - 10'd20;
+            // ----------------------------------------------------
+            // O
+            // ----------------------------------------------------
 
-            // 5x7 FONT
+            else if (hpos >= 470 && hpos < 480) begin
 
-            case (digit_value)
+                score_glyph = 6'd14;
+                score_x = hpos - 11'd470;
 
-                4'd0: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b01110;
-                        1: digit_bits = 5'b10001;
-                        2: digit_bits = 5'b10011;
-                        3: digit_bits = 5'b10101;
-                        4: digit_bits = 5'b11001;
-                        5: digit_bits = 5'b10001;
-                        6: digit_bits = 5'b01110;
-                        default: digit_bits = 0;
-                    endcase
-                end
+            end
 
-                4'd1: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b00100;
-                        1: digit_bits = 5'b01100;
-                        2: digit_bits = 5'b00100;
-                        3: digit_bits = 5'b00100;
-                        4: digit_bits = 5'b00100;
-                        5: digit_bits = 5'b00100;
-                        6: digit_bits = 5'b01110;
-                        default: digit_bits = 0;
-                    endcase
-                end
+            // ----------------------------------------------------
+            // R
+            // ----------------------------------------------------
 
-                4'd2: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b01110;
-                        1: digit_bits = 5'b10001;
-                        2: digit_bits = 5'b00001;
-                        3: digit_bits = 5'b00010;
-                        4: digit_bits = 5'b00100;
-                        5: digit_bits = 5'b01000;
-                        6: digit_bits = 5'b11111;
-                        default: digit_bits = 0;
-                    endcase
-                end
+            else if (hpos >= 480 && hpos < 490) begin
 
-                4'd3: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b01110;
-                        1: digit_bits = 5'b10001;
-                        2: digit_bits = 5'b00001;
-                        3: digit_bits = 5'b00110;
-                        4: digit_bits = 5'b00001;
-                        5: digit_bits = 5'b10001;
-                        6: digit_bits = 5'b01110;
-                        default: digit_bits = 0;
-                    endcase
-                end
+                score_glyph = 6'd17;
+                score_x = hpos - 11'd480;
 
-                4'd4: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b00010;
-                        1: digit_bits = 5'b00110;
-                        2: digit_bits = 5'b01010;
-                        3: digit_bits = 5'b10010;
-                        4: digit_bits = 5'b11111;
-                        5: digit_bits = 5'b00010;
-                        6: digit_bits = 5'b00010;
-                        default: digit_bits = 0;
-                    endcase
-                end
+            end
 
-                4'd5: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b11111;
-                        1: digit_bits = 5'b10000;
-                        2: digit_bits = 5'b10000;
-                        3: digit_bits = 5'b11110;
-                        4: digit_bits = 5'b00001;
-                        5: digit_bits = 5'b10001;
-                        6: digit_bits = 5'b01110;
-                        default: digit_bits = 0;
-                    endcase
-                end
+            // ----------------------------------------------------
+            // E
+            // ----------------------------------------------------
 
-                4'd6: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b01110;
-                        1: digit_bits = 5'b10000;
-                        2: digit_bits = 5'b10000;
-                        3: digit_bits = 5'b11110;
-                        4: digit_bits = 5'b10001;
-                        5: digit_bits = 5'b10001;
-                        6: digit_bits = 5'b01110;
-                        default: digit_bits = 0;
-                    endcase
-                end
+            else if (hpos >= 490 && hpos < 500) begin
 
-                4'd7: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b11111;
-                        1: digit_bits = 5'b00001;
-                        2: digit_bits = 5'b00010;
-                        3: digit_bits = 5'b00100;
-                        4: digit_bits = 5'b01000;
-                        5: digit_bits = 5'b01000;
-                        6: digit_bits = 5'b01000;
-                        default: digit_bits = 0;
-                    endcase
-                end
+                score_glyph = 6'd4;
+                score_x = hpos - 11'd490;
 
-                4'd8: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b01110;
-                        1: digit_bits = 5'b10001;
-                        2: digit_bits = 5'b10001;
-                        3: digit_bits = 5'b01110;
-                        4: digit_bits = 5'b10001;
-                        5: digit_bits = 5'b10001;
-                        6: digit_bits = 5'b01110;
-                        default: digit_bits = 0;
-                    endcase
-                end
+            end
 
-                4'd9: begin
-                    case (digit_y)
-                        0: digit_bits = 5'b01110;
-                        1: digit_bits = 5'b10001;
-                        2: digit_bits = 5'b10001;
-                        3: digit_bits = 5'b01111;
-                        4: digit_bits = 5'b00001;
-                        5: digit_bits = 5'b00001;
-                        6: digit_bits = 5'b01110;
-                        default: digit_bits = 0;
-                    endcase
-                end
+            // ----------------------------------------------------
+            // SPACE
+            // ----------------------------------------------------
 
-                default:
-                    digit_bits = 5'b00000;
+            else if (hpos >= 500 && hpos < 510) begin
 
-            endcase
+                score_glyph = 6'd26;
+                score_x = hpos - 11'd500;
 
-            if (digit_x < 5)
-                digit_pixel = digit_bits[4-digit_x];
+            end
+
+            // ----------------------------------------------------
+            // HUNDREDS
+            // ----------------------------------------------------
+
+            else if (hpos >= 510 && hpos < 520) begin
+
+                case (score_hundreds)
+
+                    0: score_glyph = 6'd36;
+                    1: score_glyph = 6'd27;
+                    2: score_glyph = 6'd28;
+                    3: score_glyph = 6'd29;
+                    4: score_glyph = 6'd30;
+                    5: score_glyph = 6'd31;
+                    6: score_glyph = 6'd32;
+                    7: score_glyph = 6'd33;
+                    8: score_glyph = 6'd34;
+                    9: score_glyph = 6'd35;
+
+                    default:
+                        score_glyph = 6'd36;
+
+                endcase
+
+                score_x = hpos - 11'd510;
+
+            end
+
+            // ----------------------------------------------------
+            // TENS
+            // ----------------------------------------------------
+
+            else if (hpos >= 520 && hpos < 530) begin
+
+                case (score_tens)
+
+                    0: score_glyph = 6'd36;
+                    1: score_glyph = 6'd27;
+                    2: score_glyph = 6'd28;
+                    3: score_glyph = 6'd29;
+                    4: score_glyph = 6'd30;
+                    5: score_glyph = 6'd31;
+                    6: score_glyph = 6'd32;
+                    7: score_glyph = 6'd33;
+                    8: score_glyph = 6'd34;
+                    9: score_glyph = 6'd35;
+
+                    default:
+                        score_glyph = 6'd36;
+
+                endcase
+
+                score_x = hpos - 11'd520;
+
+            end
+
+            // ----------------------------------------------------
+            // ONES
+            // ----------------------------------------------------
+
+            else if (hpos >= 530 && hpos < 540) begin
+
+                case (score_ones)
+
+                    0: score_glyph = 6'd36;
+                    1: score_glyph = 6'd27;
+                    2: score_glyph = 6'd28;
+                    3: score_glyph = 6'd29;
+                    4: score_glyph = 6'd30;
+                    5: score_glyph = 6'd31;
+                    6: score_glyph = 6'd32;
+                    7: score_glyph = 6'd33;
+                    8: score_glyph = 6'd34;
+                    9: score_glyph = 6'd35;
+
+                    default:
+                        score_glyph = 6'd36;
+
+                endcase
+
+                score_x = hpos - 11'd530;
+
+            end
 
         end
 
     end
 
-    // ============================================================
+    // ------------------------------------------------------------
+    // SCORE PIXEL
+    // ------------------------------------------------------------
+
+    wire score_pixel;
+
+    glyphs_rom score_rom(
+        .c(score_glyph),
+        .y(score_y[3:0]),
+        .x(score_x[2:0]),
+        .pixel(score_pixel)
+    );
+
+    // ------------------------------------------------------------
     // GAME OVER
-    // ============================================================
+    // ------------------------------------------------------------
 
     wire game_over_pixel =
         game_over &&
         (
-            ((vpos >= 10'd200) &&
-             (vpos < 10'd210) &&
-             (hpos >= 11'd250) &&
-             (hpos < 11'd390))
+            ((vpos >= 200) && (vpos < 210) &&
+             (hpos >= 250) && (hpos < 390)) ||
 
-            ||
+            ((vpos >= 210) && (vpos < 260) &&
+             (hpos >= 250) && (hpos < 260)) ||
 
-            ((vpos >= 10'd210) &&
-             (vpos < 10'd260) &&
-             (hpos >= 11'd250) &&
-             (hpos < 11'd260))
+            ((vpos >= 250) && (vpos < 260) &&
+             (hpos >= 250) && (hpos < 390)) ||
 
-            ||
-
-            ((vpos >= 10'd250) &&
-             (vpos < 10'd260) &&
-             (hpos >= 11'd250) &&
-             (hpos < 11'd390))
-
-            ||
-
-            ((vpos >= 10'd200) &&
-             (vpos < 10'd260) &&
-             (hpos >= 11'd380) &&
-             (hpos < 11'd390))
+            ((vpos >= 200) && (vpos < 260) &&
+             (hpos >= 380) && (hpos < 390))
         );
 
-    // ============================================================
-    // FINAL VGA OUTPUT
-    // ============================================================
+    // ------------------------------------------------------------
+    // VGA OUTPUT
+    // ------------------------------------------------------------
 
     assign RGB =
         !display_on     ? 6'b000000 :
         game_over_pixel ? 6'b111111 :
-        digit_pixel     ? 6'b111111 :
+        score_pixel     ? 6'b111111 :
         ground_pixel    ? 6'b111111 :
         dino_eye        ? 6'b000000 :
         dino_pixel      ? 6'b111111 :
-        cactus_pixel     ? 6'b111111 :
-                           6'b000000;
+        cactus_pixel    ? 6'b111111 :
+                          6'b000000;
 
-    // Prevent unused warnings
     wire _unused_ok =
         &{ena, uio_in, ui_in[7:2]};
 
