@@ -1,170 +1,513 @@
 `default_nettype none
 
 module tt_um_vga_glyph_mode(
-    input  wire [7:0] ui_in,
-    output wire [7:0] uo_out,
-    input  wire [7:0] uio_in,
-    output wire [7:0] uio_out,
-    output wire [7:0] uio_oe,
-    input  wire ena,
-    input  wire clk,
-    input  wire rst_n
+	input  wire [7:0] ui_in,
+	output wire [7:0] uo_out,
+	input  wire [7:0] uio_in,
+	output wire [7:0] uio_out,
+	output wire [7:0] uio_oe,
+	input  wire       ena,
+	input  wire       clk,
+	input  wire       rst_n
 );
 
-    wire hsync, vsync, display_on;
-    wire [10:0] hpos;
-    wire [9:0] vpos;
+	// ------------------------------------------------------------
+	// VGA
+	// ------------------------------------------------------------
 
-    // TinyVGA PMOD output
-    wire [5:0] rgb;
-    assign uo_out = {hsync, rgb[0], rgb[2], rgb[4],
-                     vsync, rgb[1], rgb[3], rgb[5]};
+	wire hsync, vsync, display_on;
+	wire [10:0] hpos;
+	wire [9:0] vpos;
 
-    assign uio_out = 8'b0;
-    assign uio_oe  = 8'b0;
+	wire [5:0] RGB;
 
-    hvsync_generator hvsync_gen(
-        .clk(clk),
-        .reset(~rst_n),
-        .mode(2'd0),
-        .hsync(hsync),
-        .vsync(vsync),
-        .display_on(display_on),
-        .hpos(hpos),
-        .vpos(vpos)
-    );
+	assign uo_out = {
+		hsync,
+		RGB[0],
+		RGB[2],
+		RGB[4],
+		vsync,
+		RGB[1],
+		RGB[3],
+		RGB[5]
+	};
 
-    // ------------------------------------------------------------
-    // Simple Chrome-Dino-style game
-    // ui_in[0] = JUMP
-    // ui_in[1] = RESET GAME
-    // ------------------------------------------------------------
+	assign uio_out = 0;
+	assign uio_oe  = 0;
 
-    reg [9:0] dino_y;
-    reg signed [8:0] velocity;
-    reg [9:0] cactus_x;
-    reg [15:0] frame_count;
-    reg game_over;
+	hvsync_generator hvsync_gen(
+		.clk(clk),
+		.reset(~rst_n),
+		.mode(2'd0),
+		.hsync(hsync),
+		.vsync(vsync),
+		.display_on(display_on),
+		.hpos(hpos),
+		.vpos(vpos)
+	);
 
-    localparam GROUND = 10'd400;
-    localparam DINO_X = 10'd80;
-    localparam DINO_W = 10'd28;
-    localparam DINO_H = 10'd36;
-    localparam CACTUS_W = 10'd18;
-    localparam CACTUS_H = 10'd38;
+	// ------------------------------------------------------------
+	// CONTROLS
+	//
+	// ui_in[0] = JUMP
+	// ui_in[1] = RESET
+	//
+	// ui_in[0] is used directly.
+	// No edge detection.
+	// ------------------------------------------------------------
 
-    wire frame_tick = (hpos == 11'd0) && (vpos == 10'd0);
+	wire jump_button  = ui_in[0];
+	wire reset_button = ui_in[1];
 
-    // Game update: once per VGA frame.
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            dino_y     <= GROUND - DINO_H;
-            velocity   <= 0;
-            cactus_x   <= 10'd600;
-            frame_count <= 0;
-            game_over  <= 0;
-        end
-        else if (frame_tick) begin
-            if (ui_in[1]) begin
-                dino_y      <= GROUND - DINO_H;
-                velocity    <= 0;
-                cactus_x    <= 10'd600;
-                frame_count <= 0;
-                game_over   <= 0;
-            end
-            else if (!game_over) begin
-                frame_count <= frame_count + 1'b1;
+	// ------------------------------------------------------------
+	// GAME CONSTANTS
+	// ------------------------------------------------------------
 
-                // Jump only when standing on the ground.
-                if (ui_in[0] && (dino_y == GROUND - DINO_H))
-                    velocity <= -10'sd115;
+	localparam GROUND = 10'd400;
 
-                // Very simple gravity.
-                if (dino_y < GROUND - DINO_H || velocity < 0) begin
-                    dino_y <= dino_y + velocity;
-                    velocity <= velocity + 10'sd8;
+	localparam DINO_X = 10'd80;
+	localparam DINO_W = 10'd28;
+	localparam DINO_H = 10'd36;
 
-                    if (dino_y + velocity >= GROUND - DINO_H) begin
-                        dino_y <= GROUND - DINO_H;
-                        velocity <= 0;
-                    end
-                end
+	localparam CACTUS_W = 10'd20;
+	localparam CACTUS_H = 10'd40;
 
-                // Move cactus.
-                if (cactus_x > 10'd0)
-                    cactus_x <= cactus_x - 10'd6;
-                else
-                    cactus_x <= 10'd640;
+	// ------------------------------------------------------------
+	// GAME VARIABLES
+	// ------------------------------------------------------------
 
-                // Simple collision box.
-                if ((DINO_X + DINO_W > cactus_x) &&
-                    (DINO_X < cactus_x + CACTUS_W) &&
-                    (dino_y + DINO_H > GROUND - CACTUS_H)) begin
-                    game_over <= 1;
-                end
-            end
-        end
-    end
+	reg [9:0] dino_y;
+	reg [9:0] cactus_x;
 
-    // ------------------------------------------------------------
-    // Draw pixels
-    // ------------------------------------------------------------
+	reg [5:0] jump_timer;
 
-    wire ground_pixel =
-        (vpos >= GROUND) && (vpos < GROUND + 4);
+	reg game_over;
 
-    // Dino body
-    wire dino_body =
-        (hpos >= DINO_X) && (hpos < DINO_X + DINO_W) &&
-        (vpos >= dino_y) && (vpos < dino_y + DINO_H);
+	// Score in BCD
+	reg [3:0] score_hundreds;
+	reg [3:0] score_tens;
+	reg [3:0] score_ones;
 
-    // Remove a little area to make the square look more dinosaur-like.
-    wire dino_cut =
-        (hpos < DINO_X + 8 && vpos < dino_y + 8) ||
-        (hpos >= DINO_X + 22 && vpos >= dino_y + 30);
+	reg [2:0] score_timer;
 
-    wire dino_pixel = dino_body && !dino_cut;
+	// ------------------------------------------------------------
+	// FRAME TICK
+	// ------------------------------------------------------------
 
-    // Dino eye
-    wire dino_eye =
-        (hpos >= DINO_X + 19) && (hpos < DINO_X + 23) &&
-        (vpos >= dino_y + 7) && (vpos < dino_y + 11);
+	wire frame_tick =
+		(hpos == 11'd0) &&
+		(vpos == 10'd0);
 
-    // Cactus
-    wire cactus_trunk =
-        (hpos >= cactus_x) && (hpos < cactus_x + 10) &&
-        (vpos >= GROUND - CACTUS_H) && (vpos < GROUND);
+	// ------------------------------------------------------------
+	// GAME LOGIC
+	// ------------------------------------------------------------
 
-    wire cactus_left =
-        (hpos >= cactus_x - 8) && (hpos < cactus_x) &&
-        (vpos >= GROUND - 25) && (vpos < GROUND - 10);
+	always @(posedge clk) begin
 
-    wire cactus_right =
-        (hpos >= cactus_x + 10) && (hpos < cactus_x + 18) &&
-        (vpos >= GROUND - 31) && (vpos < GROUND - 16);
+		if (!rst_n) begin
 
-    wire cactus_pixel = cactus_trunk | cactus_left | cactus_right;
+			dino_y <= GROUND - DINO_H;
+			cactus_x <= 10'd600;
 
-    // "GAME OVER" is intentionally very basic:
-    // a large bar and two small bars are shown when the player loses.
-    wire game_over_pixel =
-        game_over &&
-        (
-            ((vpos >= 180) && (vpos < 190) && (hpos >= 250) && (hpos < 390)) ||
-            ((vpos >= 190) && (vpos < 250) && (hpos >= 250) && (hpos < 260)) ||
-            ((vpos >= 240) && (vpos < 250) && (hpos >= 250) && (hpos < 390)) ||
-            ((vpos >= 180) && (vpos < 250) && (hpos >= 380) && (hpos < 390))
-        );
+			jump_timer <= 0;
 
-    // Black background, white objects.
-    assign rgb = !display_on ? 6'b0 :
-                 game_over_pixel ? 6'b111111 :
-                 ground_pixel ? 6'b111111 :
-                 dino_eye ? 6'b000000 :
-                 dino_pixel ? 6'b111111 :
-                 cactus_pixel ? 6'b111111 :
-                 6'b000000;
+			game_over <= 0;
 
-    wire _unused_ok = &{ena, uio_in, ui_in[7:2], frame_count[15:8]};
+			score_hundreds <= 0;
+			score_tens <= 0;
+			score_ones <= 0;
+
+			score_timer <= 0;
+
+		end
+
+		// --------------------------------------------------------
+		// RESET
+		// --------------------------------------------------------
+
+		else if (reset_button) begin
+
+			dino_y <= GROUND - DINO_H;
+			cactus_x <= 10'd600;
+
+			jump_timer <= 0;
+
+			game_over <= 0;
+
+			score_hundreds <= 0;
+			score_tens <= 0;
+			score_ones <= 0;
+
+			score_timer <= 0;
+
+		end
+
+		// --------------------------------------------------------
+		// GAME UPDATE
+		// --------------------------------------------------------
+
+		else if (frame_tick && !game_over) begin
+
+			// ----------------------------------------------------
+			// JUMP
+			//
+			// Directly checks ui_in[0].
+			//
+			// If button is HIGH and Dino is on the ground,
+			// start the jump.
+			// ----------------------------------------------------
+
+			if (jump_button &&
+				jump_timer == 0 &&
+				dino_y == GROUND - DINO_H) begin
+
+				jump_timer <= 1;
+
+			end
+
+			// ----------------------------------------------------
+			// JUMP MOVEMENT
+			// ----------------------------------------------------
+
+			if (jump_timer > 0) begin
+
+				jump_timer <= jump_timer + 1;
+
+				// Going UP
+				if (jump_timer < 10) begin
+
+					dino_y <= dino_y - 10;
+
+				end
+
+				// Going DOWN
+				else if (jump_timer < 20) begin
+
+					dino_y <= dino_y + 10;
+
+				end
+
+				// Back to ground
+				else begin
+
+					dino_y <= GROUND - DINO_H;
+					jump_timer <= 0;
+
+				end
+
+			end
+
+			// ----------------------------------------------------
+			// MOVE CACTUS
+			// ----------------------------------------------------
+
+			if (cactus_x > 10)
+				cactus_x <= cactus_x - 5;
+
+			else
+				cactus_x <= 640;
+
+			// ----------------------------------------------------
+			// SCORE
+			// ----------------------------------------------------
+
+			if (score_timer == 5) begin
+
+				score_timer <= 0;
+
+				if (score_ones == 9) begin
+
+					score_ones <= 0;
+
+					if (score_tens == 9) begin
+
+						score_tens <= 0;
+
+						if (score_hundreds < 9)
+							score_hundreds <= score_hundreds + 1;
+
+					end
+					else begin
+
+						score_tens <= score_tens + 1;
+
+					end
+
+				end
+				else begin
+
+					score_ones <= score_ones + 1;
+
+				end
+
+			end
+			else begin
+
+				score_timer <= score_timer + 1;
+
+			end
+
+			// ----------------------------------------------------
+			// COLLISION
+			// ----------------------------------------------------
+
+			if (
+				(DINO_X + DINO_W > cactus_x) &&
+				(DINO_X < cactus_x + CACTUS_W) &&
+				(dino_y + DINO_H > GROUND - CACTUS_H)
+			) begin
+
+				game_over <= 1'b1;
+
+			end
+
+		end
+
+	end
+
+	// ------------------------------------------------------------
+	// GROUND
+	// ------------------------------------------------------------
+
+	wire ground_pixel =
+		(vpos >= GROUND) &&
+		(vpos < GROUND + 4);
+
+	// ------------------------------------------------------------
+	// DINO
+	// ------------------------------------------------------------
+
+	wire dino_body =
+		(hpos >= DINO_X) &&
+		(hpos < DINO_X + DINO_W) &&
+		(vpos >= dino_y) &&
+		(vpos < dino_y + DINO_H);
+
+	wire dino_cut =
+		(hpos < DINO_X + 7) &&
+		(vpos < dino_y + 7);
+
+	wire dino_pixel =
+		dino_body && !dino_cut;
+
+	wire dino_eye =
+		(hpos >= DINO_X + 19) &&
+		(hpos < DINO_X + 23) &&
+		(vpos >= dino_y + 7) &&
+		(vpos < dino_y + 11);
+
+	// ------------------------------------------------------------
+	// CACTUS
+	// ------------------------------------------------------------
+
+	wire cactus_trunk =
+		(hpos >= cactus_x) &&
+		(hpos < cactus_x + 10) &&
+		(vpos >= GROUND - CACTUS_H) &&
+		(vpos < GROUND);
+
+	wire cactus_left =
+		(hpos >= cactus_x - 8) &&
+		(hpos < cactus_x) &&
+		(vpos >= GROUND - 25) &&
+		(vpos < GROUND - 10);
+
+	wire cactus_right =
+		(hpos >= cactus_x + 10) &&
+		(hpos < cactus_x + 18) &&
+		(vpos >= GROUND - 30) &&
+		(vpos < GROUND - 15);
+
+	wire cactus_pixel =
+		cactus_trunk |
+		cactus_left |
+		cactus_right;
+
+	// ------------------------------------------------------------
+	// SCORE DISPLAY
+	//
+	// SCORE 000
+	// ------------------------------------------------------------
+
+	reg [5:0] score_glyph;
+	reg [3:0] score_x;
+	reg [3:0] score_y;
+
+	wire score_area =
+		(hpos >= 450) &&
+		(hpos < 540) &&
+		(vpos >= 15) &&
+		(vpos < 28);
+
+	always @(*) begin
+
+		score_glyph = 6'd26;
+		score_x = 0;
+		score_y = 0;
+
+		if (score_area) begin
+
+			score_y = vpos - 15;
+
+			// S
+			if (hpos >= 450 && hpos < 460) begin
+				score_glyph = 6'd18;
+				score_x = hpos - 450;
+			end
+
+			// C
+			else if (hpos >= 460 && hpos < 470) begin
+				score_glyph = 6'd2;
+				score_x = hpos - 460;
+			end
+
+			// O
+			else if (hpos >= 470 && hpos < 480) begin
+				score_glyph = 6'd14;
+				score_x = hpos - 470;
+			end
+
+			// R
+			else if (hpos >= 480 && hpos < 490) begin
+				score_glyph = 6'd17;
+				score_x = hpos - 480;
+			end
+
+			// E
+			else if (hpos >= 490 && hpos < 500) begin
+				score_glyph = 6'd4;
+				score_x = hpos - 490;
+			end
+
+			// SPACE
+			else if (hpos >= 500 && hpos < 510) begin
+				score_glyph = 6'd26;
+				score_x = hpos - 500;
+			end
+
+			// HUNDREDS
+			else if (hpos >= 510 && hpos < 520) begin
+
+				case (score_hundreds)
+
+					0: score_glyph = 6'd36;
+					1: score_glyph = 6'd27;
+					2: score_glyph = 6'd28;
+					3: score_glyph = 6'd29;
+					4: score_glyph = 6'd30;
+					5: score_glyph = 6'd31;
+					6: score_glyph = 6'd32;
+					7: score_glyph = 6'd33;
+					8: score_glyph = 6'd34;
+					9: score_glyph = 6'd35;
+
+					default:
+						score_glyph = 6'd36;
+
+				endcase
+
+				score_x = hpos - 510;
+
+			end
+
+			// TENS
+			else if (hpos >= 520 && hpos < 530) begin
+
+				case (score_tens)
+
+					0: score_glyph = 6'd36;
+					1: score_glyph = 6'd27;
+					2: score_glyph = 6'd28;
+					3: score_glyph = 6'd29;
+					4: score_glyph = 6'd30;
+					5: score_glyph = 6'd31;
+					6: score_glyph = 6'd32;
+					7: score_glyph = 6'd33;
+					8: score_glyph = 6'd34;
+					9: score_glyph = 6'd35;
+
+					default:
+						score_glyph = 6'd36;
+
+				endcase
+
+				score_x = hpos - 520;
+
+			end
+
+			// ONES
+			else if (hpos >= 530 && hpos < 540) begin
+
+				case (score_ones)
+
+					0: score_glyph = 6'd36;
+					1: score_glyph = 6'd27;
+					2: score_glyph = 6'd28;
+					3: score_glyph = 6'd29;
+					4: score_glyph = 6'd30;
+					5: score_glyph = 6'd31;
+					6: score_glyph = 6'd32;
+					7: score_glyph = 6'd33;
+					8: score_glyph = 6'd34;
+					9: score_glyph = 6'd35;
+
+					default:
+						score_glyph = 6'd36;
+
+				endcase
+
+				score_x = hpos - 530;
+
+			end
+
+		end
+
+	end
+
+	wire score_pixel;
+
+	glyphs_rom score_rom(
+		.c(score_glyph),
+		.y(score_y),
+		.x(score_x[2:0]),
+		.pixel(score_pixel)
+	);
+
+	// ------------------------------------------------------------
+	// GAME OVER
+	// ------------------------------------------------------------
+
+	wire game_over_pixel =
+		game_over &&
+		(
+			((vpos >= 200) && (vpos < 210) &&
+			 (hpos >= 250) && (hpos < 390)) ||
+
+			((vpos >= 210) && (vpos < 260) &&
+			 (hpos >= 250) && (hpos < 260)) ||
+
+			((vpos >= 250) && (vpos < 260) &&
+			 (hpos >= 250) && (hpos < 390)) ||
+
+			((vpos >= 200) && (vpos < 260) &&
+			 (hpos >= 380) && (hpos < 390))
+		);
+
+	// ------------------------------------------------------------
+	// VGA OUTPUT
+	// ------------------------------------------------------------
+
+	assign RGB =
+		!display_on     ? 6'b000000 :
+		game_over_pixel ? 6'b111111 :
+		score_pixel     ? 6'b111111 :
+		ground_pixel    ? 6'b111111 :
+		dino_eye        ? 6'b000000 :
+		dino_pixel      ? 6'b111111 :
+		cactus_pixel    ? 6'b111111 :
+						  6'b000000;
+
+	wire _unused_ok =
+		&{ena, uio_in, ui_in[7:2]};
 
 endmodule
